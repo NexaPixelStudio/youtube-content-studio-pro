@@ -1,0 +1,205 @@
+import { Clipboard, Download, Save } from "lucide-react";
+import { useEffect, useState } from "react";
+import type { GeneratedContent } from "../types";
+
+interface Props {
+  content: GeneratedContent | null;
+  defaultTab?: Tab;
+  onSave: () => void;
+}
+
+type Tab = "overview" | "script" | "storyboard" | "image" | "video" | "metadata" | "planner";
+
+function copyText(value: string) {
+  navigator.clipboard.writeText(value);
+}
+
+function downloadJson(content: GeneratedContent) {
+  const blob = new Blob([JSON.stringify(content, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${content.topic.replace(/\s+/g, "-").toLowerCase()}-${content.id}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function SectionCopy({ text }: { text: string }) {
+  return (
+    <div className="copy-row">
+      <button className="btn secondary" onClick={() => copyText(text)}><Clipboard size={16} /> Copy</button>
+    </div>
+  );
+}
+
+export default function GeneratedResult({ content, defaultTab = "overview", onSave }: Props) {
+  const [tab, setTab] = useState<Tab>(defaultTab);
+
+  useEffect(() => {
+    setTab(defaultTab);
+  }, [defaultTab]);
+
+  if (!content) {
+    return <div className="empty">Belum ada hasil. Isi form lalu klik Generate Complete Content.</div>;
+  }
+
+  const tabs: { id: Tab; label: string }[] = [
+    { id: "overview", label: "Overview" },
+    { id: "script", label: "Script" },
+    { id: "storyboard", label: "Storyboard" },
+    { id: "image", label: "Image Prompts" },
+    { id: "video", label: "Video Prompts" },
+    { id: "metadata", label: "Metadata" },
+    { id: "planner", label: "Upload Plan" }
+  ];
+
+  return (
+    <div className="card">
+      <div className="section-title">
+        <div>
+          <h2>{content.topic}</h2>
+          <p className="muted">{content.contentType === "shorts" ? "YouTube Shorts" : "YouTube Long Video"} • {content.niche} • {content.videoLength}</p>
+        </div>
+        <div className="actions">
+          <button className="btn primary" onClick={onSave}><Save size={17} /> Save</button>
+          <button className="btn secondary" onClick={() => downloadJson(content)}><Download size={17} /> Export JSON</button>
+        </div>
+      </div>
+
+      <div className="tabs">
+        {tabs.map((item) => (
+          <button key={item.id} className={`tab ${tab === item.id ? "active" : ""}`} onClick={() => setTab(item.id)}>
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "overview" && <Overview content={content} />}
+      {tab === "script" && <Script content={content} />}
+      {tab === "storyboard" && <Storyboard content={content} />}
+      {tab === "image" && <Prompts title="AI Image Prompts" items={content.imagePrompts} />}
+      {tab === "video" && <Prompts title="AI Video Prompts" items={content.videoPrompts} />}
+      {tab === "metadata" && <Metadata content={content} />}
+      {tab === "planner" && <Planner content={content} />}
+    </div>
+  );
+}
+
+function Overview({ content }: { content: GeneratedContent }) {
+  return (
+    <div className="list">
+      <div className="grid three">
+        <div className="stat"><strong>{content.ideas.length}</strong><span>Content ideas</span></div>
+        <div className="stat"><strong>{content.storyboard.length}</strong><span>Storyboard scenes</span></div>
+        <div className="stat"><strong>{content.metadata.titleOptions.length}</strong><span>Title options</span></div>
+      </div>
+      <div className="item">
+        <h3>Best Title</h3>
+        <p>{content.metadata.bestTitle}</p>
+        <SectionCopy text={content.metadata.bestTitle} />
+      </div>
+      <div className="item">
+        <h3>Content Ideas</h3>
+        <div className="list">
+          {content.ideas.map((idea, idx) => (
+            <div className="item" key={idx}>
+              <h3>{idx + 1}. {idea.title}</h3>
+              <p><span className="badge">Hook</span> {idea.hook}</p>
+              <p><span className="badge">Angle</span> {idea.angle}</p>
+              <p><span className="badge">Why</span> {idea.whyItWorks}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Script({ content }: { content: GeneratedContent }) {
+  const fullScript = [
+    `Opening Hook:\n${content.script.openingHook}`,
+    `Intro:\n${content.script.intro}`,
+    ...content.script.mainContent.map((s) => `${s.title}:\n${s.content}`),
+    `CTA:\n${content.script.cta}`,
+    `Closing:\n${content.script.closing}`
+  ].join("\n\n");
+
+  return (
+    <div className="list">
+      <div className="item"><h3>Opening Hook</h3><p className="preline">{content.script.openingHook}</p></div>
+      <div className="item"><h3>Intro</h3><p className="preline">{content.script.intro}</p></div>
+      {content.script.mainContent.map((section, idx) => (
+        <div className="item" key={idx}><h3>{section.title}</h3><p className="preline">{section.content}</p></div>
+      ))}
+      <div className="item"><h3>CTA</h3><p className="preline">{content.script.cta}</p></div>
+      <div className="item"><h3>Closing</h3><p className="preline">{content.script.closing}</p></div>
+      <SectionCopy text={fullScript} />
+    </div>
+  );
+}
+
+function Storyboard({ content }: { content: GeneratedContent }) {
+  return (
+    <div className="list">
+      {content.storyboard.map((scene) => (
+        <div className="item" key={scene.sceneNumber}>
+          <h3>Scene {scene.sceneNumber} • {scene.duration}</h3>
+          <p><span className="badge">Visual</span> {scene.visual}</p>
+          <p><span className="badge">Shot</span> {scene.cameraShot}</p>
+          <p><span className="badge">Camera</span> {scene.cameraMovement}</p>
+          <p><span className="badge">Voiceover</span> {scene.voiceover}</p>
+          <p><span className="badge">Text</span> {scene.textOnScreen}</p>
+          <p><span className="badge">Sound</span> {scene.soundDirection}</p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Prompts({ title, items }: { title: string; items: GeneratedContent["imagePrompts"] }) {
+  return (
+    <div className="list">
+      <h3>{title}</h3>
+      {items.map((item) => (
+        <div className="item" key={item.sceneNumber}>
+          <h3>Scene {item.sceneNumber}</h3>
+          <p className="preline">{item.prompt}</p>
+          <p><span className="badge">Negative</span> {item.negativePrompt}</p>
+          <SectionCopy text={`${item.prompt}\n\nNegative prompt: ${item.negativePrompt}`} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Metadata({ content }: { content: GeneratedContent }) {
+  const metadataText = `Best title:\n${content.metadata.bestTitle}\n\nDescription:\n${content.metadata.description}\n\nHashtags:\n${content.metadata.hashtags.join(" ")}`;
+  return (
+    <div className="list">
+      <div className="item"><h3>Recommended Title</h3><p>{content.metadata.bestTitle}</p></div>
+      <div className="item"><h3>Title Options</h3>{content.metadata.titleOptions.map((t, i) => <p key={i}>{i + 1}. {t}</p>)}</div>
+      <div className="item"><h3>Description</h3><p className="preline">{content.metadata.description}</p></div>
+      <div className="item"><h3>Short Description</h3><p>{content.metadata.shortDescription}</p></div>
+      <div className="item"><h3>Hashtags</h3><p>{content.metadata.hashtags.join(" ")}</p></div>
+      <div className="item"><h3>Tags / Keywords</h3><p>{content.metadata.tags.join(", ")}</p></div>
+      <div className="item"><h3>Pinned Comment</h3><p>{content.metadata.pinnedComment}</p></div>
+      <div className="item"><h3>Thumbnail Text Ideas</h3>{content.metadata.thumbnailTextIdeas.map((t, i) => <p key={i}>{i + 1}. {t}</p>)}</div>
+      <SectionCopy text={metadataText} />
+    </div>
+  );
+}
+
+function Planner({ content }: { content: GeneratedContent }) {
+  return (
+    <div className="list">
+      <div className="grid three">
+        <div className="stat"><strong>{content.uploadPlanner.recommendedUploadDate}</strong><span>Recommended date</span></div>
+        <div className="stat"><strong>{content.uploadPlanner.recommendedUploadTime}</strong><span>Recommended time</span></div>
+        <div className="stat"><strong>{content.uploadPlanner.priorityScore}</strong><span>Priority score</span></div>
+      </div>
+      <div className="item"><h3>Category</h3><p>{content.uploadPlanner.category}</p></div>
+      <div className="item"><h3>Weekly Upload Plan</h3>{content.uploadPlanner.weeklyPlan.map((x, i) => <p key={i}>{i + 1}. {x}</p>)}</div>
+      <div className="item"><h3>Production Checklist</h3>{content.uploadPlanner.productionChecklist.map((x, i) => <p key={i}>☐ {x}</p>)}</div>
+    </div>
+  );
+}
