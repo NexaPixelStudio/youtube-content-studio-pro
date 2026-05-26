@@ -20,10 +20,15 @@ function getContentAspectRatio(contentType: GeneratedContent["contentType"]) {
 }
 
 function ensureAspectRatioInPrompt(prompt: string, aspectRatio: string) {
-  if (!prompt) return "";
-  return /aspect\s*ratio/i.test(prompt)
-    ? prompt
-    : `${prompt} Aspect ratio: ${aspectRatio}.`;
+  const rawPrompt = (prompt || "").trim();
+
+  const cleanedPrompt = rawPrompt
+    .replace(/aspect\s*ratio\s*:\s*\d+\s*:\s*\d+\.?/gi, "")
+    .trim();
+
+  return [cleanedPrompt, `Aspect ratio: ${aspectRatio}.`]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 function getPromptForScene(
@@ -64,7 +69,9 @@ function downloadJson(content: GeneratedContent) {
 function SectionCopy({ text }: { text: string }) {
   return (
     <div className="copy-row">
-      <button className="btn secondary" onClick={() => copyText(text)}><Clipboard size={16} /> Copy</button>
+      <button className="btn secondary" onClick={() => copyText(text)}>
+        <Clipboard size={16} /> Copy
+      </button>
     </div>
   );
 }
@@ -102,8 +109,12 @@ export default function GeneratedResult({ content, defaultTab = "overview", onSa
           </p>
         </div>
         <div className="actions">
-          <button className="btn primary" onClick={onSave}><Save size={17} /> Save</button>
-          <button className="btn secondary" onClick={() => downloadJson(content)}><Download size={17} /> Export JSON</button>
+          <button className="btn primary" onClick={onSave}>
+            <Save size={17} /> Save
+          </button>
+          <button className="btn secondary" onClick={() => downloadJson(content)}>
+            <Download size={17} /> Export JSON
+          </button>
         </div>
       </div>
 
@@ -134,11 +145,13 @@ function Overview({ content, onUseIdea }: { content: GeneratedContent; onUseIdea
         <div className="stat"><strong>{content.storyboard.length}</strong><span>Storyboard scenes</span></div>
         <div className="stat"><strong>{content.metadata.titleOptions.length}</strong><span>Title options</span></div>
       </div>
+
       <div className="item">
         <h3>Best Title</h3>
         <p>{content.metadata.bestTitle}</p>
         <SectionCopy text={content.metadata.bestTitle} />
       </div>
+
       <div className="item">
         <h3>Content Ideas</h3>
         <div className="list">
@@ -178,9 +191,14 @@ function Script({ content }: { content: GeneratedContent }) {
     <div className="list">
       <div className="item"><h3>Opening Hook</h3><p className="preline">{content.script.openingHook}</p></div>
       <div className="item"><h3>Intro</h3><p className="preline">{content.script.intro}</p></div>
+
       {content.script.mainContent.map((section, idx) => (
-        <div className="item" key={idx}><h3>{section.title}</h3><p className="preline">{section.content}</p></div>
+        <div className="item" key={idx}>
+          <h3>{section.title}</h3>
+          <p className="preline">{section.content}</p>
+        </div>
       ))}
+
       <div className="item"><h3>CTA</h3><p className="preline">{content.script.cta}</p></div>
       <div className="item"><h3>Closing</h3><p className="preline">{content.script.closing}</p></div>
       <SectionCopy text={fullScript} />
@@ -272,7 +290,6 @@ function Prompts({
 
         const copyValue = [
           `Scene ${item.sceneNumber}`,
-          `Aspect Ratio: ${aspectRatio}`,
           "",
           "Prompt:",
           promptText,
@@ -302,6 +319,7 @@ function Prompts({
 
 function Metadata({ content }: { content: GeneratedContent }) {
   const metadataText = `Best title:\n${content.metadata.bestTitle}\n\nDescription:\n${content.metadata.description}\n\nHashtags:\n${content.metadata.hashtags.join(" ")}`;
+
   return (
     <div className="list">
       <div className="item"><h3>Recommended Title</h3><p>{content.metadata.bestTitle}</p></div>
