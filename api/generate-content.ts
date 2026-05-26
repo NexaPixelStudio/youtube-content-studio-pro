@@ -24,15 +24,16 @@ function addAspectRatioToPrompts(items: any[], aspectRatio: string) {
   if (!Array.isArray(items)) return [];
 
   return items.map((item) => {
-    const promptText = item?.prompt || "";
-    const alreadyHasAspectRatio = /aspect\s*ratio/i.test(promptText);
+    const rawPrompt = (item?.prompt || "").trim();
+
+    const cleanedPrompt = rawPrompt
+      .replace(/aspect\s*ratio\s*:\s*\d+\s*:\s*\d+\.?/gi, "")
+      .trim();
 
     return {
       ...item,
       aspectRatio: item?.aspectRatio || aspectRatio,
-      prompt: alreadyHasAspectRatio
-        ? promptText
-        : `${promptText} Aspect ratio: ${aspectRatio}.`,
+      prompt: `${cleanedPrompt}\n\nAspect ratio: ${aspectRatio}.`.trim(),
       negativePrompt: item?.negativePrompt || ""
     };
   });
