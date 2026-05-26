@@ -46,6 +46,7 @@ export interface StoryboardScene {
 
 export interface PromptItem {
   sceneNumber: number;
+  aspectRatio: string;
   prompt: string;
   negativePrompt: string;
 }
