@@ -15,18 +15,36 @@ async function copyText(value: string) {
   await navigator.clipboard.writeText(value);
 }
 
-function getPromptForScene(items: GeneratedContent["imagePrompts"], sceneNumber: number) {
-  return items.find((item) => Number(item.sceneNumber) === Number(sceneNumber))?.prompt || "";
+function getContentAspectRatio(contentType: GeneratedContent["contentType"]) {
+  return contentType === "shorts" ? "9:16" : "16:9";
+}
+
+function ensureAspectRatioInPrompt(prompt: string, aspectRatio: string) {
+  if (!prompt) return "";
+  return /aspect\s*ratio/i.test(prompt)
+    ? prompt
+    : `${prompt} Aspect ratio: ${aspectRatio}.`;
+}
+
+function getPromptForScene(
+  items: GeneratedContent["imagePrompts"],
+  sceneNumber: number,
+  fallbackAspectRatio: string
+) {
+  const item = items.find((item) => Number(item.sceneNumber) === Number(sceneNumber));
+  const aspectRatio = item?.aspectRatio || fallbackAspectRatio;
+  return ensureAspectRatioInPrompt(item?.prompt || "", aspectRatio);
 }
 
 function getStoryboardTableText(content: GeneratedContent) {
+  const aspectRatio = getContentAspectRatio(content.contentType);
   const header = ["Scene", "Duration", "Visual", "Voice Over", "Visual Prompt", "Camera Shot"].join("\t");
   const rows = content.storyboard.map((scene) => [
     `Scene ${scene.sceneNumber}`,
     scene.duration,
     scene.visual,
     scene.voiceover,
-    getPromptForScene(content.imagePrompts, scene.sceneNumber),
+    getPromptForScene(content.imagePrompts, scene.sceneNumber, aspectRatio),
     [scene.cameraShot, scene.cameraMovement].filter(Boolean).join(", ")
   ].join("\t"));
 
@@ -62,6 +80,8 @@ export default function GeneratedResult({ content, defaultTab = "overview", onSa
     return <div className="empty">Belum ada hasil. Isi form lalu klik Generate Complete Content.</div>;
   }
 
+  const aspectRatio = getContentAspectRatio(content.contentType);
+
   const tabs: { id: Tab; label: string }[] = [
     { id: "overview", label: "Overview" },
     { id: "script", label: "Script" },
@@ -77,7 +97,9 @@ export default function GeneratedResult({ content, defaultTab = "overview", onSa
       <div className="section-title">
         <div>
           <h2>{content.topic}</h2>
-          <p className="muted">{content.contentType === "shorts" ? "YouTube Shorts" : "YouTube Long Video"} • {content.niche} • {content.videoLength}</p>
+          <p className="muted">
+            {content.contentType === "shorts" ? "YouTube Shorts" : "YouTube Long Video"} • {content.niche} • {content.videoLength} • Aspect Ratio {aspectRatio}
+          </p>
         </div>
         <div className="actions">
           <button className="btn primary" onClick={onSave}><Save size={17} /> Save</button>
@@ -96,8 +118,8 @@ export default function GeneratedResult({ content, defaultTab = "overview", onSa
       {tab === "overview" && <Overview content={content} onUseIdea={onUseIdea} />}
       {tab === "script" && <Script content={content} />}
       {tab === "storyboard" && <Storyboard content={content} />}
-      {tab === "image" && <Prompts title="AI Image Prompts" items={content.imagePrompts} />}
-      {tab === "video" && <Prompts title="AI Video Prompts" items={content.videoPrompts} />}
+      {tab === "image" && <Prompts title="AI Image Prompts" items={content.imagePrompts} fallbackAspectRatio={aspectRatio} />}
+      {tab === "video" && <Prompts title="AI Video Prompts" items={content.videoPrompts} fallbackAspectRatio={aspectRatio} />}
       {tab === "metadata" && <Metadata content={content} />}
       {tab === "planner" && <Planner content={content} />}
     </div>
@@ -167,6 +189,8 @@ function Script({ content }: { content: GeneratedContent }) {
 }
 
 function Storyboard({ content }: { content: GeneratedContent }) {
+  const aspectRatio = getContentAspectRatio(content.contentType);
+
   return (
     <div className="list">
       <div className="table-toolbar">
@@ -194,7 +218,7 @@ function Storyboard({ content }: { content: GeneratedContent }) {
           </thead>
           <tbody>
             {content.storyboard.map((scene) => {
-              const visualPrompt = getPromptForScene(content.imagePrompts, scene.sceneNumber);
+              const visualPrompt = getPromptForScene(content.imagePrompts, scene.sceneNumber, aspectRatio);
               const cameraText = [scene.cameraShot, scene.cameraMovement].filter(Boolean).join(", ");
               const rowText = [
                 `Scene ${scene.sceneNumber}`,
@@ -229,18 +253,49 @@ function Storyboard({ content }: { content: GeneratedContent }) {
   );
 }
 
-function Prompts({ title, items }: { title: string; items: GeneratedContent["imagePrompts"] }) {
+function Prompts({
+  title,
+  items,
+  fallbackAspectRatio
+}: {
+  title: string;
+  items: GeneratedContent["imagePrompts"];
+  fallbackAspectRatio: string;
+}) {
   return (
     <div className="list">
       <h3>{title}</h3>
-      {items.map((item) => (
-        <div className="item" key={item.sceneNumber}>
-          <h3>Scene {item.sceneNumber}</h3>
-          <p className="preline">{item.prompt}</p>
-          <p><span className="badge">Negative</span> {item.negativePrompt}</p>
-          <SectionCopy text={`${item.prompt}\n\nNegative prompt: ${item.negativePrompt}`} />
-        </div>
-      ))}
+
+      {items.map((item) => {
+        const aspectRatio = item.aspectRatio || fallbackAspectRatio;
+        const promptText = ensureAspectRatioInPrompt(item.prompt, aspectRatio);
+
+        const copyValue = [
+          `Scene ${item.sceneNumber}`,
+          `Aspect Ratio: ${aspectRatio}`,
+          "",
+          "Prompt:",
+          promptText,
+          "",
+          "Negative Prompt:",
+          item.negativePrompt
+        ].join("\n");
+
+        return (
+          <div className="item" key={item.sceneNumber}>
+            <div className="prompt-head">
+              <h3>Scene {item.sceneNumber}</h3>
+              <span className="badge">Aspect Ratio: {aspectRatio}</span>
+            </div>
+
+            <p className="preline">{promptText}</p>
+
+            <p><span className="badge">Negative</span> {item.negativePrompt}</p>
+
+            <SectionCopy text={copyValue} />
+          </div>
+        );
+      })}
     </div>
   );
 }
