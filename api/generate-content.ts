@@ -20,10 +20,30 @@ function safeJsonParse(raw: string) {
   }
 }
 
+function addAspectRatioToPrompts(items: any[], aspectRatio: string) {
+  if (!Array.isArray(items)) return [];
+
+  return items.map((item) => {
+    const promptText = item?.prompt || "";
+    const alreadyHasAspectRatio = /aspect\s*ratio/i.test(promptText);
+
+    return {
+      ...item,
+      aspectRatio: item?.aspectRatio || aspectRatio,
+      prompt: alreadyHasAspectRatio
+        ? promptText
+        : `${promptText} Aspect ratio: ${aspectRatio}.`,
+      negativePrompt: item?.negativePrompt || ""
+    };
+  });
+}
+
 function buildPrompt(input: any) {
+  const aspectRatio = input.contentType === "shorts" ? "9:16" : "16:9";
+
   const contentTypeInstruction = input.contentType === "shorts"
-    ? `Create a fast-paced YouTube Shorts package in storyboard-table style. If the selected duration is 30 seconds, create exactly 3 scenes: Scene 1 = 0s-10s, Scene 2 = 10s-20s, Scene 3 = 20s-30s. If the selected duration is 15 seconds, create exactly 3 scenes of about 5 seconds each. If the selected duration is 45 or 60 seconds, create 4 to 6 scenes. Each scene must feel like a clear 10-second Veo-ready beat with funny action, simple visual story, voice over, visual prompt, and camera shot.`
-    : `Create a detailed YouTube long-form video package with 8 to 12 scenes. Make the script deeper and structured. Each storyboard scene must still work in a table with Scene, Duration, Visual, Voice Over, Visual Prompt, and Camera Shot.`;
+    ? `Create a fast-paced YouTube Shorts package in storyboard-table style. Use vertical aspect ratio ${aspectRatio}. If the selected duration is 30 seconds, create exactly 3 scenes: Scene 1 = 0s-10s, Scene 2 = 10s-20s, Scene 3 = 20s-30s. If the selected duration is 15 seconds, create exactly 3 scenes of about 5 seconds each. If the selected duration is 45 or 60 seconds, create 4 to 6 scenes. Each scene must feel like a clear 10-second Veo-ready beat with funny action, simple visual story, voice over, visual prompt, and camera shot.`
+    : `Create a detailed YouTube long-form video package with 8 to 12 scenes. Use horizontal aspect ratio ${aspectRatio}. Make the script deeper and structured. Each storyboard scene must still work in a table with Scene, Duration, Visual, Voice Over, Visual Prompt, and Camera Shot.`;
 
   return `
 You are an expert YouTube content strategist, scriptwriter, storyboard planner, and AI prompt engineer.
@@ -40,6 +60,7 @@ Video goal: ${input.videoGoal}
 Video length: ${input.videoLength}
 Content style: ${input.contentStyle}
 Brand or character description: ${input.brandDescription || "none"}
+Required aspect ratio: ${aspectRatio}
 
 ${contentTypeInstruction}
 
@@ -83,6 +104,7 @@ Use this exact JSON structure:
   "imagePrompts": [
     {
       "sceneNumber": 1,
+      "aspectRatio": "${aspectRatio}",
       "prompt": "",
       "negativePrompt": ""
     }
@@ -90,6 +112,7 @@ Use this exact JSON structure:
   "videoPrompts": [
     {
       "sceneNumber": 1,
+      "aspectRatio": "${aspectRatio}",
       "prompt": "",
       "negativePrompt": ""
     }
@@ -114,7 +137,6 @@ Use this exact JSON structure:
   }
 }
 
-
 Storyboard output style requirements:
 - The storyboard must be usable as a table with these columns: Scene, Duration, Visual, Voice Over, Visual Prompt, Camera Shot.
 - The "visual" field must describe the full action clearly, like a production storyboard cell.
@@ -123,6 +145,16 @@ Storyboard output style requirements:
 - The "cameraShot" and "cameraMovement" fields will be combined as the Camera Shot column, so keep them production-ready.
 - For kids animation, keep everything cute, safe, funny, wholesome, colorful, and easy to understand globally.
 - For 30-second Shorts, prefer exactly 3 scenes with 10 seconds each unless the user clearly asks otherwise.
+
+Aspect ratio rules:
+- If contentType is "shorts", every image prompt and video prompt must use aspectRatio "9:16".
+- If contentType is "long_video", every image prompt and video prompt must use aspectRatio "16:9".
+- Every imagePrompts item must include the field "aspectRatio".
+- Every videoPrompts item must include the field "aspectRatio".
+- The prompt text itself must also mention "Aspect ratio: ${aspectRatio}".
+- Do not use square format.
+- Do not use 1:1.
+- Do not leave aspect ratio empty.
 
 Rules:
 - Generate exactly 10 content ideas.
@@ -158,6 +190,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const ai = new GoogleGenAI({ apiKey });
+    const aspectRatio = input.contentType === "shorts" ? "9:16" : "16:9";
+
     const response = await ai.models.generateContent({
       model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
       contents: buildPrompt(input),
@@ -169,6 +203,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const raw = response.text || "";
     const parsed = safeJsonParse(raw);
+
+    parsed.imagePrompts = addAspectRatioToPrompts(parsed.imagePrompts, aspectRatio);
+    parsed.videoPrompts = addAspectRatioToPrompts(parsed.videoPrompts, aspectRatio);
+
     const now = new Date().toISOString();
 
     return res.status(200).json({
