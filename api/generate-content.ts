@@ -20,6 +20,59 @@ function safeJsonParse(raw: string) {
   }
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isTemporaryGeminiError(error: any) {
+  const message = JSON.stringify(error || {}).toLowerCase();
+
+  return (
+    message.includes("503") ||
+    message.includes("unavailable") ||
+    message.includes("high demand") ||
+    message.includes("overloaded") ||
+    message.includes("temporarily") ||
+    message.includes("try again later")
+  );
+}
+
+async function generateWithRetry(ai: GoogleGenAI, prompt: string) {
+  const models = Array.from(
+    new Set([
+      process.env.GEMINI_MODEL || "gemini-2.5-flash",
+      process.env.GEMINI_FALLBACK_MODEL || "gemini-2.0-flash"
+    ])
+  );
+
+  let lastError: any;
+
+  for (const model of models) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        return await ai.models.generateContent({
+          model,
+          contents: prompt,
+          config: {
+            responseMimeType: "application/json",
+            temperature: 0.9
+          }
+        });
+      } catch (error: any) {
+        lastError = error;
+
+        if (!isTemporaryGeminiError(error)) {
+          throw error;
+        }
+
+        await sleep(attempt * 1200);
+      }
+    }
+  }
+
+  throw lastError;
+}
+
 function addAspectRatioToPrompts(items: any[], aspectRatio: string) {
   if (!Array.isArray(items)) return [];
 
@@ -178,29 +231,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return res.status(500).json({ error: "GEMINI_API_KEY is missing. Add it in Vercel Environment Variables." });
+    return res.status(500).json({
+      error: "GEMINI_API_KEY is missing. Add it in Vercel Environment Variables."
+    });
   }
 
   const input = req.body;
-  const required = ["contentType", "topic", "niche", "audience", "language", "tone", "videoGoal", "videoLength", "contentStyle"];
+  const required = [
+    "contentType",
+    "topic",
+    "niche",
+    "audience",
+    "language",
+    "tone",
+    "videoGoal",
+    "videoLength",
+    "contentStyle"
+  ];
+
   const missing = required.filter((key) => !input?.[key]);
 
   if (missing.length > 0) {
-    return res.status(400).json({ error: `Missing required fields: ${missing.join(", ")}` });
+    return res.status(400).json({
+      error: `Missing required fields: ${missing.join(", ")}`
+    });
   }
 
   try {
     const ai = new GoogleGenAI({ apiKey });
     const aspectRatio = input.contentType === "shorts" ? "9:16" : "16:9";
+    const prompt = buildPrompt(input);
 
-    const response = await ai.models.generateContent({
-      model: process.env.GEMINI_MODEL || "gemini-2.5-flash",
-      contents: buildPrompt(input),
-      config: {
-        responseMimeType: "application/json",
-        temperature: 0.9
-      }
-    });
+    const response = await generateWithRetry(ai, prompt);
 
     const raw = response.text || "";
     const parsed = safeJsonParse(raw);
@@ -218,8 +280,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ...parsed
     });
   } catch (error: any) {
-    return res.status(500).json({
-      error: error?.message || "Failed to generate content."
+    const temporary = isTemporaryGeminiError(error);
+
+    return res.status(temporary ? 503 : 500).json({
+      error: temporary
+        ? "Gemini is currently busy. Please try again in a few minutes."
+        : error?.message || "Failed to generate content."
     });
   }
 }
